@@ -1,11 +1,9 @@
 import builtins
 import inspect
 
-from pyparsing import (
-    alphas, infixNotation, opAssoc, Suppress, Word, StringStart, StringEnd
-)
-
-from typeclass.utils import curry
+from pyparsing import alphas, opAssoc
+from pyparsing import infixNotation
+from pyparsing import Suppress, StringStart, StringEnd, Word
 
 
 def signature(sig):
@@ -13,41 +11,39 @@ def signature(sig):
     return Signature(sig, scope)
 
 
+
 class Signature:
-    def __init__(self, sig, scope):
-        self.scope = scope
+    def __init__(self, takes, returns):
+        self.takes = takes
+        self.returns = returns
 
-        if isinstance(sig, tuple):
-            self._sig = sig
-        elif isinstance(sig, str):
-            self._sig = self._signature_from_string(sig)
+    def __repr__(self):
+        if isinstance(self.takes, str):
+            takes = self.takes
+        elif isinstance(self.takes, type(self)):
+            takes = '({})'.format(self.takes)
         else:
-            raise TypeError("'sig' is not tuple or str")
+            takes = '<{}>'.format(self.takes.__name__)
 
-    def __call__(self, func):
-        curried = curry(func)
-        curried.signature = self
+        if not any((isinstance(self.returns, type(self)),
+                    isinstance(self.returns, str))):
+            returns = '<{}>'.format(self.returns.__name__)
+        else:
+            returns = self.returns
 
-        return curried
+        return '{} -> {}'.format(takes, returns)
 
     @classmethod
-    def from_args(cls, args):
-        # TODO: Recursive signature (i.e. function arguments)
-        def type_name(obj):
-            return type(obj).__name__
+    def from_string(cls, sig_string, scope):
+        def process(node):
+            if isinstance(node, str):
+                from_builtins = getattr(builtins, node, node)
+                return scope.get(node, from_builtins)
 
-        sig = tuple(map(type_name, args))
+            return walk(node)
 
-        return cls(sig)
-
-    def _signature_from_string(self, sig_string):
-        def process_parsed_signature(sig):
-            for element in sig:
-                if isinstance(element, str):
-                    from_builtins = getattr(builtins, element, element)
-                    yield self.scope.get(element, from_builtins)
-                elif isinstance(element, list):
-                    yield tuple(process_parsed_signature(element))
+        def walk(parse_tree):
+            return cls(*map(process, parse_tree))
 
         arrow = '->'
         arrow_expr = infixNotation(
@@ -57,6 +53,24 @@ class Signature:
 
         parser = StringStart() + arrow_expr + StringEnd()
 
-        result = parser.parseString(sig_string).asList()[0]
+        return walk(parser.parseString(sig_string).asList()[0])
 
-        return tuple(process_parsed_signature(result))
+    def matches(self, other):
+        type_vars = {}
+
+        def match(a, b):
+            if isinstance(a, str) and a not in type_vars:
+                type_vars[a] = b
+
+            if isinstance(b, str) and b not in type_vars:
+                type_vars[b] = a
+
+            if isinstance(a, type(self)) and isinstance(b, type(self)):
+                return match(a.takes, b.takes) and match(a.returns, b.returns)
+            elif isinstance(a, str) or isinstance(b, str):
+                return type_vars.get(a, a) == b or type_vars.get(b, b) == a
+            else:
+                return a == b
+
+        return match(self, other)
+
