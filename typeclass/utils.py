@@ -1,10 +1,6 @@
 import inspect
 
 
-def curry(func):
-    return Currying(func)
-
-
 class Currying:
     def __init__(self, function, args=None):
         self._function = function
@@ -31,3 +27,12 @@ class Currying:
                 raise
 
             return self
+
+
+def curry(func):
+    return Currying(func)
+
+
+@curry
+def flip(f, a, b):
+    return f(b, a)

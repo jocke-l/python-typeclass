@@ -1,15 +1,25 @@
 import builtins
 import inspect
+from collections import defaultdict
 
 from pyparsing import alphas, opAssoc
 from pyparsing import infixNotation
 from pyparsing import Suppress, StringStart, StringEnd, Word
 
+from typeclass.utils import curry
 
-def signature(sig):
+
+def instance(type_class, data_type):
+    def decorator(cls):
+        registry.register(cls, type_class, data_type)
+        return cls
+
+    return decorator
+
+
+def signature(sig_string):
     scope = inspect.stack()[1][0].f_globals
-    return Signature(sig, scope)
-
+    return Signature.from_string(sig_string, scope)
 
 
 class Signature:
@@ -33,6 +43,12 @@ class Signature:
 
         return '{} -> {}'.format(takes, returns)
 
+    def __call__(self, function):
+        function = curry(function)
+        function.signature = self
+
+        return function
+
     @classmethod
     def from_string(cls, sig_string, scope):
         def process(node):
@@ -55,6 +71,13 @@ class Signature:
 
         return walk(parser.parseString(sig_string).asList()[0])
 
+    @classmethod
+    def from_args(cls, args):
+        if len(args) == 1:
+            return cls(type(args[0]), 'unknown')
+        else:
+            return cls(type(args[0]), cls.from_args(args[1:]))
+
     def matches(self, other):
         type_vars = {}
 
@@ -74,3 +97,59 @@ class Signature:
 
         return match(self, other)
 
+
+class Registry:
+    _registry = defaultdict(dict)
+
+    def __getattr__(self, name):
+        def dispatcher(*args):
+            call_signature = Signature.from_args(args)
+            for method_signature, method in self._registry[name].items():
+                if call_signature.matches(method_signature):
+                    return method(*args)
+
+            raise NameError('This function is not in any type class.')
+
+        return dispatcher
+
+    def register(self, instance, type_class, data_type):
+        signatures = {
+            name: getattr(type_class, name)
+            for name in dir(type_class)
+            if isinstance(getattr(type_class, name), Signature)
+        }
+
+        methods = {
+            name: getattr(instance, name)
+            for name in dir(instance)
+            if hasattr(getattr(instance, name), 'signature')
+        }
+
+        if set(signatures) != set(methods):
+            raise TypeError(
+                "Instance '{}' doesn't match type class '{}'s"
+                "definition. Needs '{}'.".format(
+                    instnace.__name__,
+                    type_class.__name__,
+                    ', '.format(signatures)
+                )
+            )
+
+        for method_name, method in methods.items():
+            if method.signature.matches(signatures[method_name]):
+                self._registry[method_name][method.signature] = method
+            else:
+                raise TypeError(
+                    "Method '{}' in instance '{}' of "
+                    "type class '{}' didn't type-check. "
+                    "Expected '{}'. Got '{}'.".format(
+                        method.__name__,
+                        instance.__name__,
+                        type_class.__name__,
+                        signatures[method_name],
+                        method.signature
+                    )
+                )
+
+
+registry = Registry()
