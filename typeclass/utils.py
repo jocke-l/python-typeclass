@@ -8,12 +8,10 @@ class Currying:
         self._num_args = len(inspect.signature(function).parameters)
 
     def __repr__(self):
-        return '<{}: function={} args={} num_args={}>'.format(
-            type(self).__name__,
+        return '{} {}'.format(
             self._function.__name__,
-            self._args,
-            self._num_args
-        )
+            ' '.join(self._args),
+        ).rstrip()
 
     def __call__(self, *added_args):
         new_args = self._args + list(added_args)

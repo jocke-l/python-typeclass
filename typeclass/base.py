@@ -126,13 +126,17 @@ class Registry:
         }
 
         if set(signatures) != set(methods):
+            excess = ', '.join(set(methods) - set(signatures))
+            needs = ', '.join(set(signatures) - set(methods))
+
             raise TypeError(
-                "Instance '{}' doesn't match type class '{}'s"
-                "definition. Needs '{}'.".format(
-                    instnace.__name__,
+                "Instance '{}' doesn't match type class '{}'s "
+                "definition. {} {}".format(
+                    instance.__name__,
                     type_class.__name__,
-                    ', '.format(signatures)
-                )
+                    "Needs: '{}'".format(needs) if needs else '',
+                    "Excess: '{}'".format(excess) if excess else ''
+                ).rstrip()
             )
 
         for method_name, method in methods.items():
@@ -143,7 +147,7 @@ class Registry:
                     "Method '{}' in instance '{}' of "
                     "type class '{}' didn't type-check. "
                     "Expected '{}'. Got '{}'.".format(
-                        method.__name__,
+                        method,
                         instance.__name__,
                         type_class.__name__,
                         signatures[method_name],
